@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0c18">
+<title>Wheel of Fortune</title>
+
+<!-- =====================================================================
+     SECTION 2 — CSS
+     Dark theme, gradients, soft shadows. All colours live in CSS variables.
+     ===================================================================== -->
+<style>
+  :root {
+    --bg: #0a0c18;
+    --card: rgba(255, 255, 255, 0.045);
+    --card-border: rgba(255, 255, 255, 0.09);
+    --text: #e9ebfa;
+    --muted: #9aa1c8;
+    --accent: #7c6cff;
+    --accent-2: #ff5fa2;
+    --accent-3: #38bdf8;
+    --gold: #ffd166;
+    --danger: #ff5c7a;
+    --ok: #3ddc97;
+    --radius: 16px;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+
+  /* Shown only if the script does not run (blocked preview, in-app viewer…) or crashes */
+  .js-warn {
+    position: sticky; top: 0; z-index: 100; margin: 0; padding: 12px 16px;
+    background: #ff5c7a; color: #1a0007; font-weight: 700; text-align: center; line-height: 1.4;
+  }
+
+  html, body { margin: 0; min-height: 100%; }
+
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(900px 600px at 15% -10%, rgba(124, 108, 255, 0.28), transparent 60%),
+      radial-gradient(800px 600px at 110% 10%, rgba(255, 95, 162, 0.18), transparent 60%),
+      radial-gradient(800px 700px at 50% 120%, rgba(56, 189, 248, 0.14), transparent 60%),
+      var(--bg);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Page layout ---------- */
+  .app {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+  }
+  .app > header { grid-column: 1 / -1; text-align: center; }
+  h1 {
+    margin: 0 0 6px;
+    font-size: clamp(1.9rem, 4vw, 2.8rem);
+    letter-spacing: 0.04em;
+    background: linear-gradient(90deg, var(--gold), var(--accent-2), var(--accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  header p { margin: 0; color: var(--muted); }
+
+  /* ---------- Wheel stage ---------- */
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 30px;
+    position: sticky;
+    top: 10px;
+  }
+
+  .wheel-wrap {
+    position: relative;
+    width: min(88vw, 500px, 70vh);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    /* decorative rings + glow around the wheel */
+    box-shadow:
+      0 0 0 10px #1b1f40,
+      0 0 0 13px rgba(255, 255, 255, 0.1),
+      0 30px 70px rgba(0, 0, 0, 0.65),
+      0 0 90px rgba(124, 108, 255, 0.28);
+  }
+  .wheel-wrap.pop { animation: pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1); }
+  @keyframes pop { from { transform: scale(0.93); } to { transform: scale(1); } }
+
+  #wheel {
+    width: 100%;
+    height: 100%;
+    display: block;
+    border-radius: 50%;
+    transform-origin: 50% 50%;
+    will-change: transform;
+  }
+
+  /* fixed pointer at the top of the wheel (points down) */
+  .pointer {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    width: 0;
+    height: 0;
+    transform: translateX(-50%);
+    transform-origin: 50% 0;          /* the pointer "flicks" around its top point */
+    border-left: 20px solid transparent;
+    border-right: 20px solid transparent;
+    border-top: 46px solid var(--gold);
+    filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.55));
+    z-index: 3;
+  }
+  .pointer::after {           /* little highlight on the pointer */
+    content: "";
+    position: absolute;
+    left: -9px; top: -40px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff, #c98d00 70%);
+  }
+
+  /* hub in the middle of the wheel (does not rotate) */
+  .hub {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 17%; aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4a4f8f, #14163a 70%);
+    box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.14), 0 6px 18px rgba(0, 0, 0, 0.6), inset 0 2px 6px rgba(255,255,255,.25);
+    pointer-events: none;
+  }
+
+  /* ---------- SPIN button ---------- */
+  .spin-btn {
+    position: relative;
+    margin-top: 40px;
+    padding: 18px 70px;
+    border: 0;
+    border-radius: 999px;
+    font: 800 1.5rem/1 inherit;
+    letter-spacing: 0.28em;
+    text-indent: 0.28em;
+    color: #fff;
+    cursor: pointer;
+    overflow: hidden;
+    background: linear-gradient(135deg, var(--accent-2), var(--accent) 55%, var(--accent-3));
+    background-size: 200% 200%;
+    box-shadow:
+      0 12px 32px rgba(124, 108, 255, 0.5),
+      inset 0 2px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -5px 0 rgba(0, 0, 0, 0.2);
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.25s ease, background-position 0.6s ease;
+  }
+  .spin-btn::after {          /* shine sweep on hover */
+    content: "";
+    position: absolute;
+    top: 0; left: -80%;
+    width: 50%; height: 100%;
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+    transform: skewX(-20deg);
+    transition: left 0.6s ease;
+  }
+  .spin-btn:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.04);
+    background-position: 100% 50%;
+    box-shadow: 0 18px 40px rgba(255, 95, 162, 0.5), inset 0 2px 0 rgba(255,255,255,.4), inset 0 -5px 0 rgba(0,0,0,.2);
+  }
+  .spin-btn:hover:not(:disabled)::after { left: 130%; }
+  .spin-btn:active:not(:disabled) {
+    transform: translateY(3px) scale(0.97);
+    box-shadow: 0 5px 14px rgba(124, 108, 255, 0.45), inset 0 5px 12px rgba(0, 0, 0, 0.35);
+  }
+  .spin-btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 4px; }
+  .spin-btn:disabled { filter: grayscale(0.85) brightness(0.65); cursor: not-allowed; }
+  .spin-btn.is-spinning { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 12px 50px rgba(255, 209, 102, 0.55); } }
+
+  .status { margin: 18px 0 0; min-height: 1.4em; color: var(--muted); text-align: center; }
+
+  /* ---------- Buttons right under the wheel ---------- */
+  button, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .actions {
+    margin-top: 40px;
+    width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+  }
+  .actions .spin-btn { margin-top: 0; }
+  .round-btn {
+    flex: none; width: 52px; height: 52px; border-radius: 50%;
+    display: grid; place-items: center;
+    border: 1px solid var(--card-border);
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--text); font-size: 1.3rem; cursor: pointer;
+    transition: 0.15s;
+  }
+  .round-btn:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-2px); }
+  .round-btn:active { transform: scale(0.93); }
+  .round-btn.off { opacity: 0.55; }
+  .reset-near { margin-top: 12px; }
+
+  /* ---------- Settings panel ---------- */
+  .panel { display: flex; flex-direction: column; gap: 16px; transition: opacity 0.2s; }
+  .panel.busy { opacity: 0.55; pointer-events: none; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 18px 18px 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(6px);
+  }
+  .card h2 {
+    margin: 0 0 12px;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+  }
+  .hint { margin: 8px 0 0; font-size: 0.85rem; color: var(--muted); }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field-label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
+
+  /* segmented radio control */
+  .seg { display: inline-flex; padding: 4px; gap: 4px; border-radius: 12px; background: rgba(0,0,0,.3); border: 1px solid var(--card-border); width: 100%; }
+  .seg label { flex: 1; position: relative; }
+  .seg input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+  .seg span {
+    display: block; text-align: center; padding: 9px 8px; border-radius: 9px;
+    font-weight: 600; font-size: 0.92rem; color: var(--muted); transition: 0.2s;
+  }
+  .seg input:checked + span { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 4px 14px rgba(124,108,255,.4); }
+  .seg input:focus-visible + span { outline: 2px solid var(--gold); }
+  .seg input:disabled + span { opacity: 0.5; }
+  .seg input:disabled { cursor: not-allowed; }
+
+  /* inputs */
+  input[type="text"], input[type="number"], select {
+    background: rgba(0, 0, 0, 0.32);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 9px 11px;
+    font: inherit;
+    min-width: 0;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input:disabled { opacity: 0.55; }
+  input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  input[type="color"] {
+    width: 100%; height: 40px; padding: 3px; cursor: pointer;
+    background: rgba(0,0,0,.32); border: 1px solid var(--card-border); border-radius: 10px;
+  }
+  #durNum { width: 78px; }
+
+  /* buttons */
+  .btn {
+    border: 1px solid var(--card-border);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    padding: 9px 14px;
+    border-radius: 10px;
+    font: 600 0.9rem inherit;
+    cursor: pointer;
+    transition: 0.15s;
+  }
+  .btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.13); transform: translateY(-1px); }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; color: #fff; }
+  .btn.danger { color: var(--danger); }
+
+  /* slot list */
+  .slots { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .slot { display: flex; align-items: center; gap: 8px; }
+  .slot-num {
+    flex: none; width: 26px; height: 26px; display: grid; place-items: center;
+    border-radius: 50%; background: rgba(255,255,255,.08); font-size: .78rem; color: var(--muted);
+  }
+  .slot-name { flex: 1; }
+  .pct { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+  .pct input { width: 78px; text-align: right; }
+  .eff {
+    flex: none; min-width: 62px; text-align: center; padding: 6px 8px; border-radius: 999px;
+    background: rgba(124,108,255,.18); color: #cfc9ff; font-size: .82rem; font-weight: 600;
+  }
+  .slot.out .slot-name { text-decoration: line-through; }
+  .slot.out .eff { background: rgba(255,92,122,.16); color: var(--danger); }
+  .icon-btn {
+    flex: none; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--card-border);
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 1rem; transition: .15s;
+  }
+  .icon-btn:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+  .icon-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+  /* sum indicator */
+  .sumbox { margin-top: 14px; }
+  .sumbar { height: 8px; border-radius: 99px; background: rgba(0,0,0,.35); overflow: hidden; }
+  .sumbar > i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--ok); transition: width .25s, background .25s; }
+  .sumbox.warn .sumbar > i { background: var(--danger); }
+  .sumtext { margin-top: 8px; font-size: .88rem; font-weight: 600; color: var(--ok); }
+  .sumbox.warn .sumtext { color: var(--danger); }
+  .tools { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* presets */
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .preset {
+    border: 1px solid rgba(255,255,255,.2); border-radius: 999px; padding: 7px 14px; color: #fff;
+    font: 700 .8rem inherit; cursor: pointer; text-shadow: 0 1px 3px rgba(0,0,0,.7); transition: .15s;
+  }
+  .preset:hover { transform: translateY(-2px) scale(1.05); }
+
+  /* elimination log */
+  .log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .log li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255,92,122,.1); animation: slideIn .35s ease; }
+  .log li.winner { background: rgba(255,209,102,.15); color: var(--gold); font-weight: 700; }
+  .log .n { color: var(--danger); font-weight: 700; min-width: 28px; }
+  .log li.winner .n { color: var(--gold); }
+  .log .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log em { font-style: normal; color: var(--muted); font-size: .85rem; }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- Result modal ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 50; padding: 20px;
+    display: grid; place-items: center;
+    background: rgba(4, 5, 14, 0.74);
+    backdrop-filter: blur(6px);
+    opacity: 0; visibility: hidden;
+    transition: opacity 0.35s ease, visibility 0s linear 0.35s;
+  }
+  .overlay.show { opacity: 1; visibility: visible; transition: opacity 0.35s ease; }
+
+  .modal {
+    width: min(430px, 100%);
+    text-align: center;
+    padding: 36px 28px 28px;
+    border-radius: 26px;
+    background: linear-gradient(160deg, #1d2149, #11132b);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7), 0 0 80px var(--glow, rgba(124,108,255,.35));
+    transform: scale(0.55) translateY(40px);
+    opacity: 0;
+    transition: transform 0.55s cubic-bezier(0.2, 1.45, 0.4, 1), opacity 0.35s ease;
+  }
+  .overlay.show .modal { transform: none; opacity: 1; }
+  .modal.win, .modal.final { --glow: rgba(255, 209, 102, 0.4); --tone: var(--gold); }
+  .modal.elim { --glow: rgba(255, 92, 122, 0.4); --tone: var(--danger); }
+
+  .badge {
+    width: 92px; height: 92px; margin: 0 auto 14px; display: grid; place-items: center;
+    font-size: 2.8rem; border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.25), rgba(255,255,255,.04));
+    border: 2px solid var(--tone, var(--accent));
+    box-shadow: 0 0 30px var(--glow);
+    animation: bob 2s ease-in-out infinite;
+  }
+  @keyframes bob { 50% { transform: translateY(-6px) scale(1.05); } }
+  .kicker { text-transform: uppercase; letter-spacing: .25em; font-size: .8rem; font-weight: 700; color: var(--tone, var(--accent)); }
+  .modal h2 { margin: 10px 0 8px; font-size: clamp(1.6rem, 6vw, 2.2rem); word-break: break-word; }
+  .modal p { margin: 0 0 22px; color: var(--muted); line-height: 1.5; }
+  .modal .chance {
+    display: inline-block; margin-bottom: 10px; padding: 6px 16px; border-radius: 999px;
+    font-weight: 800; font-size: 1.1rem; color: var(--tone, var(--accent));
+    background: rgba(255,255,255,.07); border: 1px solid var(--tone, var(--accent));
+  }
+
+  /* confetti (winner only) */
+  #confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 60; }
+  .confetti-piece {
+    position: absolute; top: -24px; width: 10px; height: 16px; border-radius: 2px;
+    animation: fall linear forwards;
+  }
+  @keyframes fall { to { transform: translate3d(var(--dx), 110vh, 0) rotate(var(--rot)); } }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 960px) {
+    /* minmax(0, 1fr): without the 0 minimum, wide content stretches the column past the screen */
+    .app { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .stage, .panel { min-width: 0; }
+    .stage { position: static; padding-top: 34px; }
+  }
+  @media (max-width: 480px) {
+    .grid2 { grid-template-columns: 1fr; }
+    .spin-btn { padding: 16px 52px; }
+    .eff { min-width: 52px; }
+  }
+  /* ---------- Phones ---------- */
+  @media (max-width: 640px) {
+    .app {
+      padding: 14px calc(14px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+      gap: 16px;
+    }
+    header p { font-size: 0.9rem; }
+    /* lighter effects: blur filters and fixed gradients make phones lag */
+    body { background-attachment: scroll; }
+    .card { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
+    .overlay { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(4, 5, 14, 0.86); }
+    .stage { padding-top: 26px; }
+    .wheel-wrap {
+      box-shadow: 0 0 0 7px #1b1f40, 0 0 0 9px rgba(255, 255, 255, 0.1),
+                  0 18px 40px rgba(0, 0, 0, 0.6), 0 0 50px rgba(124, 108, 255, 0.25);
+    }
+    .pointer { top: -24px; border-left-width: 15px; border-right-width: 15px; border-top-width: 36px; }
+    .pointer::after { left: -7px; top: -30px; width: 14px; height: 14px; }
+    .actions { margin-top: 30px; gap: 10px; }
+    .actions .spin-btn { flex: 1; max-width: 300px; padding: 16px 16px; font-size: 1.3rem; letter-spacing: 0.22em; text-indent: 0.22em; }
+    .round-btn { width: 50px; height: 50px; }
+    .card { padding: 14px; }
+    /* 16px inputs stop iOS Safari from zooming the page when a field is focused */
+    input[type="text"], input[type="number"], select { font-size: 16px; }
+    .btn { min-height: 44px; }
+    .tools .btn { flex: 1 1 auto; }
+    .presets .preset { flex: 1 1 auto; padding: 10px 12px; }
+    .icon-btn { width: 40px; height: 40px; }
+    .slot { gap: 6px; }
+    .pct input { width: 66px; }
+    .eff { min-width: 54px; padding: 6px; }
+    .modal { padding: 28px 18px 20px; border-radius: 22px; }
+    .badge { width: 76px; height: 76px; font-size: 2.3rem; }
+    #mBtn { width: 100%; }
+  }
+  /* touch screens have no real hover: don't leave the button "lifted" after a tap */
+  @media (hover: none) {
+    .spin-btn:hover:not(:disabled), .round-btn:hover, .btn:hover:not(:disabled), .preset:hover { transform: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+
+<!-- =====================================================================
+     SECTION 1 — HTML
+     ===================================================================== -->
+<body>
+<div id="jsWarn" class="js-warn">JavaScript не запущен в этом окне просмотра — откройте файл в обычном браузере (Chrome / Safari). · JavaScript is not running here — open this file in a regular browser.</div>
+<main class="app">
+
+  <header>
+    <h1>WHEEL OF FORTUNE</h1>
+    <p>Spin the wheel — the winner is decided before it starts moving.</p>
+  </header>
+
+  <!-- ===== Wheel + SPIN button ===== -->
+  <section class="stage" aria-label="Wheel">
+    <div class="wheel-wrap" id="wheelWrap">
+      <div class="pointer" aria-hidden="true"></div>
+      <canvas id="wheel" width="1000" height="1000" role="img" aria-label="Wheel of fortune"></canvas>
+      <div class="hub" aria-hidden="true"></div>
+    </div>
+    <div class="actions">
+      <button id="spinBtn" class="spin-btn" type="button">SPIN</button>
+      <button id="soundBtn" class="round-btn" type="button" aria-pressed="true" title="Sound on/off" aria-label="Toggle sound">🔊</button>
+    </div>
+    <p id="status" class="status" aria-live="polite"></p>
+    <!-- shown in Elimination mode, right next to the wheel -->
+    <button id="resetBtn" class="btn danger reset-near" type="button" hidden>↺ Reset wheel</button>
+  </section>
+
+  <!-- ===== Settings ===== -->
+  <aside class="panel" id="panel" aria-label="Settings">
+
+    <!-- Modes -->
+    <div class="card">
+      <h2>Modes</h2>
+      <div class="grid2">
+        <div>
+          <span class="field-label">Probability</span>
+          <div class="seg" role="radiogroup" aria-label="Probability mode">
+            <label><input type="radio" name="probMode" value="normal" checked><span>Normal</span></label>
+            <label><input type="radio" name="probMode" value="advanced"><span>Advanced</span></label>
+          </div>
+        </div>
+        <div>
+          <span class="field-label">Result</span>
+          <div class="seg" role="radiogroup" aria-label="Result mode">
+            <label><input type="radio" name="resultMode" value="standard" checked><span>Standard</span></label>
+            <label><input type="radio" name="resultMode" value="elimination"><span>Elimination</span></label>
+          </div>
+        </div>
+      </div>
+      <p class="hint" id="modeHint"></p>
+    </div>
+
+    <!-- Duration -->
+    <div class="card">
+      <h2>Spin duration</h2>
+      <div class="row">
+        <input id="durRange" type="range" min="0.5" max="20" step="0.5" value="5" aria-label="Spin duration slider">
+        <input id="durNum" type="number" min="0.5" max="20" step="0.1" value="5" aria-label="Spin duration in seconds">
+        <span style="color:var(--muted)">sec</span>
+      </div>
+    </div>
+
+    <!-- Slots -->
+    <div class="card">
+      <h2>Slots (<span id="slotCount">4</span>/12)</h2>
+      <ul class="slots" id="slotList"></ul>
+
+      <div class="sumbox" id="sumBox" hidden>
+        <div class="sumbar"><i id="sumFill"></i></div>
+        <div class="sumtext" id="sumText"></div>
+      </div>
+
+      <div class="tools">
+        <button class="btn primary" id="addBtn" type="button">+ Add slot</button>
+        <button class="btn" id="equalBtn" type="button" hidden>Distribute evenly</button>
+        <button class="btn" id="normBtn" type="button" hidden>Scale to 100%</button>
+      </div>
+      <p class="hint" id="slotHint">Min 2, max 12 slots.</p>
+    </div>
+
+    <!-- Appearance -->
+    <div class="card">
+      <h2>Appearance</h2>
+      <div class="grid2" style="grid-template-columns: repeat(3, 1fr);">
+        <div><span class="field-label">Wheel colour</span><input type="color" id="colWheel" value="#6d5dfc"></div>
+        <div><span class="field-label">Text colour</span><input type="color" id="colText" value="#ffffff"></div>
+        <div><span class="field-label">Border colour</span><input type="color" id="colBorder" value="#12142c"></div>
+      </div>
+      <div style="margin-top:14px">
+        <span class="field-label">Slot colours</span>
+        <select id="palette" style="width:100%">
+          <option value="gradient">Gradient from wheel colour</option>
+          <option value="shades">Alternating shades of wheel colour</option>
+          <option value="rainbow">Rainbow</option>
+        </select>
+      </div>
+      <div class="presets" id="presets" aria-label="Colour presets"></div>
+    </div>
+
+    <!-- Elimination log -->
+    <div class="card" id="elimCard" hidden>
+      <h2>Elimination order</h2>
+      <ol class="log" id="logList"></ol>
+      <p class="hint" id="logHint">Nobody eliminated yet.</p>
+    </div>
+
+  </aside>
+</main>
+
+<!-- ===== Result modal (win / elimination) ===== -->
+<div class="overlay" id="overlay" aria-hidden="true">
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="mName">
+    <div class="badge" id="mBadge">🎉</div>
+    <div class="kicker" id="mKicker">Winner</div>
+    <h2 id="mName">—</h2>
+    <div class="chance" id="mChance">0%</div>
+    <p id="mDetail"></p>
+    <button class="btn primary" id="mBtn" type="button">Continue</button>
+  </div>
+</div>
+<div id="confetti" aria-hidden="true"></div>
+
+<!-- =====================================================================
+     SECTION 3 — JAVASCRIPT
+     ===================================================================== -->
+<script>
+// If anything crashes, show the error on the page instead of leaving a silent empty wheel.
+window.addEventListener('error', e => {
+  const w = document.getElementById('jsWarn');
+  if (w) { w.hidden = false; w.textContent = 'JavaScript error: ' + (e.message || 'unknown'); }
+});
+(() => {
+  'use strict';
+  document.getElementById('jsWarn').hidden = true;      // the script is running → hide the "no JS" warning
+
+  /* -------------------------------------------------------------------
+   * 1. CONSTANTS & STATE
+   * ----------------------------------------------------------------- */
+  const MIN_SLOTS = 2;
+  const MAX_SLOTS = 12;
+  const SUM_TOLERANCE = 0.005;                          // allowed rounding error for "sum = 100%"
+  const EASING = 'cubic-bezier(0.12, 0.72, 0.08, 1)';   // fast start, long smooth deceleration
+
+  const PRESETS = [
+    { name: 'Neon',   wheel: '#6d5dfc', text: '#ffffff', border: '#12142c', palette: 'gradient' },
+    { name: 'Sunset', wheel: '#ff6b35', text: '#fff7ed', border: '#3b0d1a', palette: 'gradient' },
+    { name: 'Ocean',  wheel: '#0ea5e9', text: '#f0f9ff', border: '#082f49', palette: 'shades'   },
+    { name: 'Gold',   wheel: '#f5b301', text: '#1c1204', border: '#5a3b00', palette: 'shades'   },
+    { name: 'Candy',  wheel: '#ff5fa2', text: '#ffffff', border: '#ffffff', palette: 'rainbow'  }
+  ];
+
+  const state = {
+    // Editable slots. `prob` is the percentage used in Advanced mode.
+    slots: [1, 2, 3, 4].map(n => ({ id: n, name: 'Prize ' + n, prob: 25 })),
+    nextId: 5,
+    probMode: 'normal',        // 'normal' | 'advanced'
+    resultMode: 'standard',    // 'standard' | 'elimination'
+    duration: 5,               // seconds
+    eliminated: [],            // [{id, name, p, order}] — elimination history
+    rotation: 0,               // current wheel rotation in degrees (clockwise)
+    spinning: false,
+    lastResult: null,          // text for the status line (standard mode)
+    colors: { wheel: '#6d5dfc', text: '#ffffff', border: '#12142c', palette: 'gradient' }
+  };
+
+  const $ = id => document.getElementById(id);
+  const canvas = $('wheel');
+  const wrap = $('wheelWrap');
+
+  /* -------------------------------------------------------------------
+   * 2. SMALL HELPERS
+   * ----------------------------------------------------------------- */
+  const mod = (a, n) => ((a % n) + n) % n;                // always-positive modulo
+  const round2 = v => Math.round(v * 100) / 100;
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const fmtPct = p => (+p.toFixed(2)) + '%';
+  const toRad = deg => (deg - 90) * Math.PI / 180;         // our 0° = top, clockwise → canvas angle
+
+  function hexToHsl(hex) {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const d = max - min;
+    const l = (max + min) / 2;
+    let h = 0, s = 0;
+    if (d) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      if (max === r) h = ((g - b) / d) % 6;
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    return { h, s: s * 100, l: l * 100 };
+  }
+
+  /* -------------------------------------------------------------------
+   * 3. SLOT / PROBABILITY LOGIC
+   * ----------------------------------------------------------------- */
+  const isSession = () => state.eliminated.length > 0;
+  const isEliminated = id => state.eliminated.some(e => e.id === id);
+  const activeSlots = () => state.slots.filter(s => !isEliminated(s.id));
+  const slotName = s => s.name.trim() || ('Slot ' + (state.slots.indexOf(s) + 1));
+
+  /**
+   * Returns the slots that are currently on the wheel together with their
+   * EFFECTIVE probability `p` (percent, always sums to 100):
+   *  - Normal mode:   100 / n for each slot.
+   *  - Advanced mode: user value, re-normalised if some slots were eliminated.
+   */
+  function getActive() {
+    const act = activeSlots();
+    let weights = state.probMode === 'normal' ? act.map(() => 1) : act.map(s => s.prob);
+    let total = weights.reduce((a, b) => a + b, 0);
+    if (total <= 0) { weights = act.map(() => 1); total = act.length; }   // safety net
+    return act.map((s, i) => ({ id: s.id, name: slotName(s), p: weights[i] / total * 100 }));
+  }
+
+  /** Start/end angle (deg, clockwise from the top) of every slice — slice size ∝ probability. */
+  function getGeometry(act) {
+    let angle = 0;
+    return act.map(s => {
+      const span = s.p / 100 * 360;
+      const g = { start: angle, end: angle + span };
+      angle += span;
+      return g;
+    });
+  }
+
+  /** Weighted random pick. Slots with 0% can never be selected. */
+  function pickWinner(act) {
+    const r = Math.random() * 100;
+    let cum = 0, last = -1;
+    for (let i = 0; i < act.length; i++) {
+      if (act[i].p <= 0) continue;
+      last = i;
+      cum += act[i].p;
+      if (r < cum) return i;
+    }
+    return last;   // floating-point safety
+  }
+
+  const probSum = () => state.slots.reduce((a, s) => a + s.prob, 0);
+  const sumValid = () => Math.abs(probSum() - 100) < SUM_TOLERANCE;
+
+  function equalize() {
+    const n = state.slots.length;
+    const each = Math.floor(10000 / n) / 100;
+    state.slots.forEach(s => { s.prob = each; });
+    const last = state.slots[n - 1];
+    last.prob = round2(last.prob + 100 - each * n);        // put the rounding remainder on the last slot
+  }
+
+  function normalize() {
+    const sum = probSum();
+    if (sum <= 0) return equalize();
+    state.slots.forEach(s => { s.prob = round2(s.prob * 100 / sum); });
+    const rest = 100 - probSum();
+    const biggest = state.slots.reduce((a, b) => (b.prob > a.prob ? b : a));
+    biggest.prob = round2(biggest.prob + rest);
+  }
+
+  function canSpin() {
+    if (state.spinning) return false;
+    if (activeSlots().length < 2) return false;
+    if (state.probMode === 'advanced' && !sumValid()) return false;
+    return true;
+  }
+
+  /* -------------------------------------------------------------------
+   * 4. WHEEL DRAWING (canvas)
+   * ----------------------------------------------------------------- */
+  function sliceColor(i, n, base) {
+    const mode = state.colors.palette;
+    if (mode === 'rainbow') return `hsl(${Math.round(i * 360 / n)}, 72%, 52%)`;
+    if (mode === 'shades') {
+      let l = base.l + (i % 2 === 0 ? -8 : 8);
+      if (n % 2 === 1 && i === n - 1) l = base.l;          // avoid two equal neighbours at the wrap-around
+      return `hsl(${Math.round(base.h)}, ${Math.round(Math.max(base.s, 35))}%, ${Math.round(clamp(l, 18, 80))}%)`;
+    }
+    // 'gradient': hue travels from the base colour across the wheel
+    const h = (base.h + i * (240 / n)) % 360;
+    return `hsl(${Math.round(h)}, ${Math.round(Math.max(base.s, 50))}%, ${Math.round(clamp(base.l, 38, 60))}%)`;
+  }
+
+  function drawWheel() {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, cx = W / 2, cy = W / 2, R = W / 2 - 12;
+    const act = getActive();
+    const geo = getGeometry(act);
+    const base = hexToHsl(state.colors.wheel);
+
+    ctx.clearRect(0, 0, W, W);
+
+    // --- slices ---
+    act.forEach((s, i) => {
+      const g = geo[i];
+      if (g.end - g.start <= 0) return;                    // 0% slot has no visible slice
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, R, toRad(g.start), toRad(g.end));
+      ctx.closePath();
+      ctx.fillStyle = sliceColor(i, act.length, base);
+      ctx.fill();
+      ctx.lineWidth = 6;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = state.colors.border;
+      ctx.stroke();
+    });
+
+    // --- soft depth overlay ---
+    const grad = ctx.createRadialGradient(cx, cy, R * 0.1, cx, cy, R);
+    grad.addColorStop(0, 'rgba(0,0,0,0.38)');
+    grad.addColorStop(0.55, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(255,255,255,0.08)');
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = grad; ctx.fill();
+
+    // --- outer border ring ---
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.lineWidth = 12; ctx.strokeStyle = state.colors.border; ctx.stroke();
+
+    // --- labels (written along the radius, from the rim towards the centre) ---
+    act.forEach((s, i) => {
+      const g = geo[i];
+      const span = g.end - g.start;
+      if (span < 4) return;                                // too thin for text
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(toRad((g.start + g.end) / 2));
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = state.colors.text;
+      ctx.shadowColor = 'rgba(0,0,0,0.45)';
+      ctx.shadowBlur = 6;
+
+      const maxW = R * 0.62;
+      const arcHeight = 2 * Math.sin(Math.min(span, 180) / 2 * Math.PI / 180) * R * 0.7;
+      let size = clamp(arcHeight * 0.55, 14, 46);
+      ctx.font = `700 ${size}px "Segoe UI", system-ui, sans-serif`;
+
+      let label = s.name;
+      while (ctx.measureText(label).width > maxW && size > 16) {    // first shrink the font…
+        size -= 1;
+        ctx.font = `700 ${size}px "Segoe UI", system-ui, sans-serif`;
+      }
+      if (ctx.measureText(label).width > maxW) {                    // …then truncate with an ellipsis
+        while (label.length > 1 && ctx.measureText(label + '…').width > maxW) label = label.slice(0, -1);
+        label += '…';
+      }
+      ctx.fillText(label, R - 34, 0);
+      ctx.restore();
+    });
+  }
+
+  /* -------------------------------------------------------------------
+   * 4b. SOUND (Web Audio API — every sound is synthesised, no audio files)
+   *  - "whoosh": filtered noise that sweeps down while the wheel slows
+   *  - "tick":   a short wooden click each time the pointer crosses a slice border
+   *  - win / elimination jingles
+   * ----------------------------------------------------------------- */
+  const sound = { enabled: true, ctx: null, stopWhoosh: null };
+  const pointerEl = document.querySelector('.pointer');
+
+  /** Returns the AudioContext (created lazily inside a user gesture) or null if muted/unsupported. */
+  function audio() {
+    if (!sound.enabled) return null;
+    if (!sound.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      try { sound.ctx = new AC(); } catch (e) { return null; }
+    }
+    if (sound.ctx.state === 'suspended') sound.ctx.resume();   // mobile browsers start suspended
+    return sound.ctx;
+  }
+
+  /** One enveloped oscillator note. o = {freq, to?, t?, dur, type?, vol?} */
+  function tone(ctx, o) {
+    const t0 = ctx.currentTime + (o.t || 0);
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = o.type || 'sine';
+    osc.frequency.setValueAtTime(o.freq, t0);
+    if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t0 + o.dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(o.vol || 0.2, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
+    osc.connect(g);
+    g.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + o.dur + 0.02);
+  }
+
+  function playTick() {
+    const ctx = audio();
+    if (!ctx) return;
+    tone(ctx, { freq: 1500 + Math.random() * 200, to: 480, dur: 0.06, type: 'triangle', vol: 0.18 });
+  }
+
+  function startWhoosh(dur) {
+    const ctx = audio();
+    if (!ctx) return;
+    stopWhoosh();
+    const len = ctx.sampleRate;                               // 1 second of looped white noise
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'bandpass';
+    filt.Q.value = 0.9;
+    const g = ctx.createGain();
+    const t = ctx.currentTime;
+    filt.frequency.setValueAtTime(2200, t);
+    filt.frequency.exponentialRampToValueAtTime(260, t + dur);   // pitch falls as the wheel slows
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.07, t + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(filt); filt.connect(g); g.connect(ctx.destination);
+    src.start(t);
+    src.stop(t + dur + 0.1);
+
+    sound.stopWhoosh = () => {
+      try {
+        g.gain.cancelScheduledValues(ctx.currentTime);
+        g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.05);
+        src.stop(ctx.currentTime + 0.3);
+      } catch (e) { /* already stopped */ }
+      sound.stopWhoosh = null;
+    };
+  }
+  function stopWhoosh() { if (sound.stopWhoosh) sound.stopWhoosh(); }
+
+  function playWin(big) {
+    const ctx = audio();
+    if (!ctx) return;
+    const notes = big ? [523.25, 659.25, 783.99, 1046.5, 1318.5, 1568] : [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((f, i) => tone(ctx, { freq: f, t: i * 0.11, dur: 0.35, type: 'triangle', vol: 0.2 }));
+    tone(ctx, { freq: notes[notes.length - 1] / 2, t: notes.length * 0.11, dur: big ? 1.0 : 0.6, type: 'sine', vol: 0.18 });
+  }
+
+  function playElim() {
+    const ctx = audio();
+    if (!ctx) return;
+    tone(ctx, { freq: 440, to: 110, dur: 0.55, type: 'sawtooth', vol: 0.1 });
+    tone(ctx, { freq: 330, to: 82, t: 0.12, dur: 0.55, type: 'square', vol: 0.06 });
+  }
+
+  /** Little flick animation of the pointer on every tick. */
+  function wigglePointer() {
+    if (!pointerEl.animate) return;
+    pointerEl.animate([
+      { transform: 'translateX(-50%) rotate(0deg)' },
+      { transform: 'translateX(-50%) rotate(-16deg)' },
+      { transform: 'translateX(-50%) rotate(0deg)' }
+    ], { duration: 110, easing: 'ease-out' });
+  }
+
+  /** Which slice is under the pointer? `a` = angle in WHEEL coordinates (deg, clockwise from top). */
+  function sliceIndexAt(geo, a) {
+    for (let i = 0; i < geo.length; i++) if (a >= geo[i].start && a < geo[i].end) return i;
+    return -1;
+  }
+
+  /** The wheel's real, currently rendered rotation (read from the running CSS transition). */
+  function currentAngle() {
+    const m = getComputedStyle(canvas).transform;
+    if (!m || m === 'none') return 0;
+    const v = m.match(/matrix\(([^)]+)\)/);
+    if (!v) return 0;
+    const p = v[1].split(',').map(parseFloat);
+    return Math.atan2(p[1], p[0]) * 180 / Math.PI;
+  }
+
+  /* -------------------------------------------------------------------
+   * 5. SPIN LOGIC
+   * The winner AND the exact stop angle are computed BEFORE the animation
+   * starts. The CSS transition then simply rotates the wheel to that angle.
+   * ----------------------------------------------------------------- */
+  function spin() {
+    if (!canSpin()) return;
+
+    const act = getActive();
+    const geo = getGeometry(act);
+    const winIdx = pickWinner(act);
+    const winner = act[winIdx];
+
+    // Stop somewhere inside the winning slice (keep 12% margin from the borders
+    // so the pointer never lands exactly on a line).
+    const g = geo[winIdx];
+    const target = g.start + (g.end - g.start) * (0.12 + 0.76 * Math.random());
+
+    // The pointer is fixed at the top (0°). After rotating the wheel by R degrees
+    // clockwise, the point that was at angle `a` sits at a + R, so we need
+    // R ≡ -target (mod 360). Add full turns for the show (more turns for longer spins).
+    const dur = state.duration;
+    const fullTurns = Math.max(2, Math.round(dur * 1.2));
+    const delta = mod(-target - state.rotation, 360);
+    const finalRotation = state.rotation + delta + fullTurns * 360;
+    const startAngle = state.rotation;
+
+    state.spinning = true;
+    state.rotation = finalRotation;
+    updateControls();
+
+    let done = false;
+    let timer = null;
+    let raf = 0;
+
+    void canvas.offsetWidth;                               // flush styles so the transition starts from the current angle
+    canvas.style.transition = `transform ${dur}s ${EASING}`;
+    canvas.style.transform = `rotate(${finalRotation}deg)`;
+
+    // Sound + pointer flick: every frame, check which slice is under the pointer;
+    // when it changes, the pointer has crossed a border → "tick".
+    startWhoosh(dur);
+    let lastIdx = sliceIndexAt(geo, mod(-startAngle, 360));
+    let lastTick = 0;
+    const watch = ts => {
+      if (done) return;
+      const idx = sliceIndexAt(geo, mod(-currentAngle(), 360));
+      if (idx !== lastIdx) {
+        lastIdx = idx;
+        if (ts - lastTick > 28) {                          // throttle so very fast spinning becomes a buzz, not a crash
+          lastTick = ts;
+          playTick();
+          wigglePointer();
+        }
+      }
+      raf = requestAnimationFrame(watch);
+    };
+    raf = requestAnimationFrame(watch);
+
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      cancelAnimationFrame(raf);
+      stopWhoosh();
+      canvas.removeEventListener('transitionend', onEnd);
+
+      // Normalise the angle (visually identical) so numbers never grow forever.
+      state.rotation = mod(state.rotation, 360);
+      canvas.style.transition = 'none';
+      canvas.style.transform = `rotate(${state.rotation}deg)`;
+
+      state.spinning = false;
+      handleResult(winner, act.length);
+    };
+    const onEnd = e => { if (e.target === canvas && e.propertyName === 'transform') finish(); };
+    canvas.addEventListener('transitionend', onEnd);
+    timer = setTimeout(finish, dur * 1000 + 300);          // fallback if transitionend never fires
+  }
+
+  /** Called when the wheel has stopped. */
+  function handleResult(winner, countBefore) {
+    if (state.resultMode === 'standard') {
+      state.lastResult = `Last result: ${winner.name} (${fmtPct(winner.p)})`;
+      updateControls(); updateInfo();
+      showModal({
+        type: 'win', badge: '🎉', kicker: 'Winner', name: winner.name, chance: fmtPct(winner.p),
+        detail: 'This was the chance of this slot to win.',
+        onClose: () => {}
+      });
+      confetti(60);
+      playWin(false);
+      return;
+    }
+
+    // Elimination mode: remember the loser; the wheel is rebuilt after the modal closes.
+    state.eliminated.push({ id: winner.id, name: winner.name, p: winner.p, order: state.eliminated.length + 1 });
+    const left = countBefore - 1;
+    playElim();
+    showModal({
+      type: 'elim', badge: '💥', kicker: 'Eliminated #' + state.eliminated.length,
+      name: winner.name, chance: fmtPct(winner.p),
+      detail: left > 1 ? `${left} slots are still in the game.` : 'Only one slot is left!',
+      onClose: () => {
+        refreshAll(true);
+        if (left === 1) showFinal();
+      }
+    });
+  }
+
+  function showFinal() {
+    const survivor = getActive()[0];
+    const lastElim = state.eliminated[state.eliminated.length - 1];
+    showModal({
+      type: 'final', badge: '🏆', kicker: 'Final winner', name: survivor.name,
+      chance: fmtPct(100 - lastElim.p),
+      detail: `Last slot standing after ${state.eliminated.length} eliminations. The percentage is its chance in the final spin.`,
+      btn: 'Done',
+      onClose: () => {}
+    });
+    confetti(110);
+    playWin(true);
+  }
+
+  /* -------------------------------------------------------------------
+   * 6. MODAL + CONFETTI
+   * ----------------------------------------------------------------- */
+  let afterClose = null;
+
+  function showModal(o) {
+    $('modal').className = 'modal ' + o.type;
+    $('mBadge').textContent = o.badge;
+    $('mKicker').textContent = o.kicker;
+    $('mName').textContent = o.name;
+    $('mChance').textContent = o.chance;
+    $('mDetail').textContent = o.detail;
+    $('mBtn').textContent = o.btn || 'Continue';
+    afterClose = o.onClose;
+    $('overlay').classList.add('show');
+    $('overlay').setAttribute('aria-hidden', 'false');
+    setTimeout(() => $('mBtn').focus(), 50);
+  }
+
+  function closeModal() {
+    if (!$('overlay').classList.contains('show')) return;
+    $('overlay').classList.remove('show');
+    $('overlay').setAttribute('aria-hidden', 'true');
+    const cb = afterClose;
+    afterClose = null;
+    if (cb) cb();
+  }
+
+  function confetti(count) {
+    const box = $('confetti');
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement('div');
+      el.className = 'confetti-piece';
+      el.style.left = Math.random() * 100 + 'vw';
+      el.style.background = `hsl(${Math.random() * 360}, 85%, 60%)`;
+      el.style.setProperty('--dx', (Math.random() * 240 - 120) + 'px');
+      el.style.setProperty('--rot', (Math.random() * 900 - 450) + 'deg');
+      el.style.animationDuration = (2.4 + Math.random() * 2.2) + 's';
+      el.style.animationDelay = (Math.random() * 0.5) + 's';
+      box.appendChild(el);
+      setTimeout(() => el.remove(), 6000);
+    }
+  }
+
+  /* -------------------------------------------------------------------
+   * 7. UI RENDERING
+   * ----------------------------------------------------------------- */
+  /** Rebuilds the slot rows (called when structure / mode changes, not on every keystroke). */
+  function renderSlots() {
+    const list = $('slotList');
+    list.textContent = '';
+    const session = isSession();
+    const adv = state.probMode === 'advanced';
+
+    state.slots.forEach((slot, idx) => {
+      const out = isEliminated(slot.id);
+      const li = document.createElement('li');
+      li.className = 'slot' + (out ? ' out' : '');
+      li.dataset.id = slot.id;
+
+      const num = document.createElement('span');
+      num.className = 'slot-num';
+      num.textContent = idx + 1;
+
+      const name = document.createElement('input');
+      name.type = 'text';
+      name.className = 'slot-name';
+      name.maxLength = 24;
+      name.value = slot.name;
+      name.placeholder = 'Slot ' + (idx + 1);
+      name.disabled = session;
+      name.setAttribute('aria-label', 'Name of slot ' + (idx + 1));
+      name.addEventListener('input', () => { slot.name = name.value; drawWheel(); });
+
+      li.append(num, name);
+
+      if (adv && !session) {
+        // Advanced mode: manual percentage input
+        const pct = document.createElement('label');
+        pct.className = 'pct';
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.min = 0; inp.max = 100; inp.step = 0.1;
+        inp.value = slot.prob;
+        inp.setAttribute('aria-label', 'Probability of slot ' + (idx + 1) + ' in percent');
+        inp.addEventListener('input', () => {
+          const v = parseFloat(inp.value);
+          slot.prob = Number.isFinite(v) ? clamp(v, 0, 100) : 0;
+          drawWheel(); updateInfo();
+        });
+        pct.append(inp, document.createTextNode('%'));
+        li.append(pct);
+      } else {
+        // Normal mode / running elimination: show the effective probability chip
+        const eff = document.createElement('span');
+        eff.className = 'eff';
+        li.append(eff);
+      }
+
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'icon-btn';
+      rm.textContent = '✕';
+      rm.title = 'Remove slot';
+      rm.setAttribute('aria-label', 'Remove slot ' + (idx + 1));
+      rm.disabled = session || state.slots.length <= MIN_SLOTS;
+      rm.addEventListener('click', () => removeSlot(slot.id));
+      li.append(rm);
+
+      list.append(li);
+    });
+    $('slotCount').textContent = state.slots.length;
+  }
+
+  /** Lightweight refresh: probability chips, sum bar, warnings, status line, SPIN state. */
+  function updateInfo() {
+    const adv = state.probMode === 'advanced';
+    const map = new Map(getActive().map(s => [s.id, s.p]));
+
+    document.querySelectorAll('#slotList .slot').forEach(li => {
+      const eff = li.querySelector('.eff');
+      if (!eff) return;
+      const id = Number(li.dataset.id);
+      eff.textContent = map.has(id) ? fmtPct(map.get(id)) : 'out';
+    });
+
+    // Sum validation (Advanced mode only)
+    const box = $('sumBox');
+    box.hidden = !adv;
+    if (adv) {
+      const sum = round2(probSum());
+      const ok = sumValid();
+      box.classList.toggle('warn', !ok);
+      $('sumFill').style.width = clamp(sum, 0, 100) + '%';
+      $('sumText').textContent = ok
+        ? `✓ Total: ${fmtPct(sum)}`
+        : `⚠ Total is ${fmtPct(sum)} — probabilities must add up to exactly 100%. Spinning is disabled.`;
+    }
+
+    $('spinBtn').disabled = !canSpin();
+
+    // Status line
+    const st = $('status');
+    const act = activeSlots();
+    if (state.spinning) st.textContent = 'Spinning…';
+    else if (state.resultMode === 'elimination') {
+      st.textContent = (isSession() && act.length === 1)
+        ? `Finished! Winner: ${slotName(act[0])}. Press “Reset wheel” to play again.`
+        : (isSession() ? `${act.length} slots remaining — spin again!` : 'Press SPIN to eliminate the first slot.');
+    } else st.textContent = state.lastResult || 'Press SPIN to start.';
+  }
+
+  /** Enable/disable controls depending on spinning / elimination-session state. */
+  function updateControls() {
+    const session = isSession();
+    const panel = $('panel');
+    panel.classList.toggle('busy', state.spinning);
+    if ('inert' in panel) panel.inert = state.spinning;
+
+    $('spinBtn').classList.toggle('is-spinning', state.spinning);
+    $('addBtn').disabled = session || state.slots.length >= MAX_SLOTS;
+    $('equalBtn').disabled = session;
+    $('normBtn').disabled = session;
+    $('equalBtn').hidden = $('normBtn').hidden = state.probMode !== 'advanced';
+    document.querySelectorAll('input[name="probMode"], input[name="resultMode"]').forEach(r => { r.disabled = session; });
+
+    $('elimCard').hidden = state.resultMode !== 'elimination';
+    $('resetBtn').hidden = state.resultMode !== 'elimination';        // the Reset button sits right under the wheel
+    $('resetBtn').disabled = state.spinning || !isSession();
+    $('modeHint').textContent =
+      (state.probMode === 'normal'
+        ? 'Normal: every slot has the same chance. '
+        : 'Advanced: set each chance yourself — the total must be 100%. ') +
+      (state.resultMode === 'standard'
+        ? 'Standard: the slot the wheel stops on is the result.'
+        : 'Elimination: the slot that wins is removed, until one remains.') +
+      (session ? ' (Reset the wheel to change modes.)' : '');
+    $('slotHint').textContent = session
+      ? 'Slots are locked during elimination. Reset the wheel to edit them.'
+      : (state.probMode === 'advanced'
+          ? 'Slices on the wheel are proportional to probability; a 0% slot can never win.'
+          : 'Min 2, max 12 slots.');
+    updateInfo();
+  }
+
+  function renderLog() {
+    const ol = $('logList');
+    ol.textContent = '';
+    state.eliminated.forEach(e => {
+      const li = document.createElement('li');
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = '#' + e.order;
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = e.name;
+      const em = document.createElement('em'); em.textContent = fmtPct(e.p);
+      li.append(n, nm, em);
+      ol.append(li);
+    });
+    const act = activeSlots();
+    if (isSession() && act.length === 1) {
+      const li = document.createElement('li');
+      li.className = 'winner';
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = '🏆';
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = slotName(act[0]) + ' — winner';
+      li.append(n, nm);
+      ol.append(li);
+    }
+    $('logHint').hidden = isSession();
+  }
+
+  /** Full refresh. `animate` plays a small "pop" when the wheel was rebuilt. */
+  function refreshAll(animate) {
+    drawWheel();
+    renderSlots();
+    renderLog();
+    updateControls();
+    if (animate) {
+      wrap.classList.remove('pop');
+      void wrap.offsetWidth;                                // restart the CSS animation
+      wrap.classList.add('pop');
+    }
+  }
+
+  /* -------------------------------------------------------------------
+   * 8. ACTIONS (add / remove / reset / presets)
+   * ----------------------------------------------------------------- */
+  function addSlot() {
+    if (isSession() || state.slots.length >= MAX_SLOTS) return;
+    let k = 1;
+    while (state.slots.some(s => s.name === 'Prize ' + k)) k++;      // first free "Prize N"
+    state.slots.push({ id: state.nextId++, name: 'Prize ' + k, prob: 0 });
+    if (state.probMode === 'normal') equalize();                     // keep stored numbers tidy
+    refreshAll();
+    const inputs = document.querySelectorAll('#slotList .slot-name');
+    inputs[inputs.length - 1].focus();
+  }
+
+  function removeSlot(id) {
+    if (isSession() || state.slots.length <= MIN_SLOTS) return;
+    state.slots = state.slots.filter(s => s.id !== id);
+    if (state.probMode === 'normal') equalize();
+    refreshAll();
+  }
+
+  function resetWheel() {
+    state.eliminated = [];
+    state.lastResult = null;
+    state.rotation = 0;
+    canvas.style.transition = 'none';
+    canvas.style.transform = 'rotate(0deg)';
+    refreshAll(true);
+  }
+
+  function applyColors() {
+    $('colWheel').value = state.colors.wheel;
+    $('colText').value = state.colors.text;
+    $('colBorder').value = state.colors.border;
+    $('palette').value = state.colors.palette;
+    drawWheel();
+  }
+
+  /* -------------------------------------------------------------------
+   * 9. EVENT WIRING
+   * ----------------------------------------------------------------- */
+  $('spinBtn').addEventListener('click', spin);
+  $('addBtn').addEventListener('click', addSlot);
+  $('equalBtn').addEventListener('click', () => { equalize(); refreshAll(); });
+  $('normBtn').addEventListener('click', () => { normalize(); refreshAll(); });
+  $('resetBtn').addEventListener('click', resetWheel);
+
+  // Sound on/off
+  $('soundBtn').addEventListener('click', () => {
+    sound.enabled = !sound.enabled;
+    const b = $('soundBtn');
+    b.textContent = sound.enabled ? '🔊' : '🔇';
+    b.classList.toggle('off', !sound.enabled);
+    b.setAttribute('aria-pressed', String(sound.enabled));
+    if (sound.enabled) playTick(); else stopWhoosh();
+  });
+
+  document.querySelectorAll('input[name="probMode"]').forEach(r => r.addEventListener('change', () => {
+    if (!r.checked) return;
+    state.probMode = r.value;
+    if (state.probMode === 'normal') { /* probabilities are ignored in Normal mode */ }
+    refreshAll();
+  }));
+  document.querySelectorAll('input[name="resultMode"]').forEach(r => r.addEventListener('change', () => {
+    if (!r.checked) return;
+    state.resultMode = r.value;
+    refreshAll();
+  }));
+
+  // Duration: slider and number box are kept in sync and clamped to 0.5–10 s
+  function setDuration(v) {
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) return;
+    state.duration = clamp(n, 0.5, 20);
+  }
+  $('durRange').addEventListener('input', e => { setDuration(e.target.value); $('durNum').value = state.duration; });
+  $('durNum').addEventListener('input', e => { setDuration(e.target.value); $('durRange').value = state.duration; });
+  $('durNum').addEventListener('blur', e => { e.target.value = state.duration; });
+
+  // Colours
+  $('colWheel').addEventListener('input', e => { state.colors.wheel = e.target.value; drawWheel(); });
+  $('colText').addEventListener('input', e => { state.colors.text = e.target.value; drawWheel(); });
+  $('colBorder').addEventListener('input', e => { state.colors.border = e.target.value; drawWheel(); });
+  $('palette').addEventListener('change', e => { state.colors.palette = e.target.value; drawWheel(); });
+
+  PRESETS.forEach(p => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'preset';
+    b.textContent = p.name;
+    b.style.background = `linear-gradient(135deg, ${p.wheel} 0 55%, ${p.border} 55% 100%)`;
+    b.addEventListener('click', () => {
+      state.colors = { wheel: p.wheel, text: p.text, border: p.border, palette: p.palette };
+      applyColors();
+    });
+    $('presets').append(b);
+  });
+
+  // Modal
+  $('mBtn').addEventListener('click', closeModal);
+  $('overlay').addEventListener('click', e => { if (e.target === $('overlay')) closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  /* -------------------------------------------------------------------
+   * 10. INIT
+   * ----------------------------------------------------------------- */
+  applyColors();
+  refreshAll();
+})();
+</script>
+</body>
+</html>
